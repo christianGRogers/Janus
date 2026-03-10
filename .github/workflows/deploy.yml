@@ -1,0 +1,40 @@
+name: Deploy Janus Server
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy to bradensbay.com
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: bradensbay.com
+          username: christian
+          password: ${{ secrets.SSH_PASSWORD }}
+          port: 23
+          script: |
+            set -e
+
+            APP_DIR="/home/christian/janus"
+
+            # Clone or update the repository
+            if [ -d "$APP_DIR/.git" ]; then
+              cd "$APP_DIR"
+              git fetch origin main
+              git reset --hard origin/main
+            else
+              git clone https://github.com/christianGRogers/Janus.git "$APP_DIR"
+              cd "$APP_DIR"
+            fi
+
+            # Run the deploy script
+            chmod +x deploy/remote_deploy.sh
+            bash deploy/remote_deploy.sh
