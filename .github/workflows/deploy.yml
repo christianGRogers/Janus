@@ -26,13 +26,16 @@ jobs:
             APP_DIR="/home/christian/janus"
 
             # Clone or update the repository
-            if [ -d "$APP_DIR/.git" ]; then
-              cd "$APP_DIR"
+            mkdir -p "$APP_DIR"
+            cd "$APP_DIR"
+            if [ -d ".git" ]; then
               git fetch origin main
               git reset --hard origin/main
             else
-              git clone https://github.com/christianGRogers/Janus.git "$APP_DIR"
-              cd "$APP_DIR"
+              git init
+              git remote add origin https://github.com/christianGRogers/Janus.git
+              git fetch origin main
+              git reset --hard origin/main
             fi
 
             # Run the deploy script
