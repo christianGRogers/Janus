@@ -30,17 +30,14 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import bcrypt
 import jwt
 
-# Load .env from the project root (two levels up from this file)
+
 _env_path = Path(__file__).resolve().parents[2] / ".env"
 load_dotenv(_env_path)
 
-# ── secrets ───────────────────────────────────────────────────────────────────
-# In production, load these from env vars or a vault.
-
 SECRET_KEY: str = os.environ.get("JANUS_SECRET_KEY", "change-me-in-production")
-JWT_ALGORITHM: str = "HS256"
-JWT_EXPIRY_SECONDS: int = 3600  # 1 hour
-EMAIL_VERIFY_MAX_AGE: int = 3600  # 1 hour
+JWT_ALGORITHM: str = os.environ.get("JWT_ALGORITHM", "HS256")
+JWT_EXPIRY_SECONDS: int = int(os.environ.get("JWT_EXPIRY_SECONDS", "3600"))
+EMAIL_VERIFY_MAX_AGE: int = int(os.environ.get("EMAIL_VERIFY_MAX_AGE", "3600"))
 
 _serializer = URLSafeTimedSerializer(SECRET_KEY)
 
