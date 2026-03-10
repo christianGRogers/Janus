@@ -10,5 +10,8 @@ def test_version():
 
 
 def test_all_exported():
-    """Ensure __all__ is defined and is a list."""
+    """Ensure __all__ is defined and contains expected symbols."""
     assert isinstance(janus.__all__, list)
+    assert "Client" in janus.__all__
+    assert "Session" in janus.__all__
+    assert "Node" in janus.__all__
