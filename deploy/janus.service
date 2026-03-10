@@ -1,0 +1,14 @@
+[Unit]
+Description=Janus FastAPI Server
+After=network.target
+
+[Service]
+User=christian
+WorkingDirectory=/home/christian/janus
+ExecStart=/home/christian/janus/venv/bin/uvicorn janus.server.app:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+EnvironmentFile=/home/christian/janus/.env
+
+[Install]
+WantedBy=multi-user.target
