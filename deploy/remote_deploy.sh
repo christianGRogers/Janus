@@ -10,10 +10,11 @@ SERVICE_NAME="janus"
 cd "$APP_DIR"
 
 # ── Create / update virtualenv ────────────────────────────────────────────────
-if [ ! -x "$VENV_DIR/bin/python" ]; then
+if [ ! -x "$VENV_DIR/bin/python" ] || ! "$VENV_DIR/bin/python" -m pip --version &>/dev/null; then
     echo "▸ Creating virtual environment..."
     rm -rf "$VENV_DIR"
     python3 -m venv "$VENV_DIR"
+    "$VENV_DIR/bin/python" -m ensurepip --upgrade
 fi
 
 echo "▸ Upgrading pip..."
