@@ -23,6 +23,8 @@ class NodeRequestResponse(BaseModel):
 class NodeInfo(BaseModel):
     id: str
     status: str
+    container_backed: bool = False
+    container_name: Optional[str] = None
 
 
 class RegisterNodePayload(BaseModel):
@@ -107,4 +109,15 @@ class RunModelResponse(BaseModel):
     model_id: str
     predictions: List[List[float]]
     broker_url: Optional[str] = None
+    broker_dispatched: bool = False
+
+
+# ── Container Queue ──────────────────────────────────────────────────────────
+
+class QueueStatus(BaseModel):
+    """Status of the pre-provisioned container queue."""
+    target_size: int
+    ready_count: int
+    total_provisioned: int
+    running: bool
     broker_dispatched: bool = False
