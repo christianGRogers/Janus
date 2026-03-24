@@ -3,6 +3,9 @@ Janus REST API – FastAPI application.
 
 Run locally with:
     uvicorn janus.server.app:app --reload
+
+Supports optional LXD container queue for pre-provisioned compute nodes.
+Enable with: LXD_SOCKET or LXD_CLUSTER_ENDPOINT environment variables.
 """
 
 from __future__ import annotations
@@ -11,6 +14,7 @@ import os
 import uuid
 import shutil
 import sqlite3
+import logging
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Depends, Header, Query, UploadFile, File
 from typing import List, Optional
@@ -35,18 +39,50 @@ from . import database as db
 from . import auth
 from janus import const
 
+logger = logging.getLogger(__name__)
+
 # ── App & shared state ────────────────────────────────────────────────────────
 
 app = FastAPI(title="Janus Broker API", version="0.1.0")
 
-# Single in-memory registry; swap for a DB-backed one later.
-registry = NodeRegistry()
+# Optional: LXD container queue for pre-provisioned nodes
+container_queue = None
+try:
+    lxd_socket = os.environ.get("LXD_SOCKET") or os.environ.get("LXD_CLUSTER_ENDPOINT")
+    if lxd_socket:
+        from .container_queue import ContainerQueue
+        queue_size = int(os.environ.get("CONTAINER_QUEUE_SIZE", "5"))
+        container_queue = ContainerQueue(target_size=queue_size)
+        logger.info(f"LXD container queue initialized (target size: {queue_size})")
+except Exception as exc:
+    logger.warning(f"Failed to initialize container queue: {exc}")
+
+# Node registry (with optional container queue backing)
+registry = NodeRegistry(container_queue=container_queue)
 
 # In-memory model metadata store:  model_id -> ModelInfo dict
 model_store: dict[str, dict] = {}
 
 # Directory where uploaded model files are saved.
 MODEL_UPLOAD_DIR = os.environ.get("JANUS_MODEL_DIR", os.path.join(os.path.dirname(__file__), "_models"))
+
+
+# ── Lifecycle events ──────────────────────────────────────────────────────────
+
+@app.on_event("startup")
+async def startup_event():
+    """Start the container queue on app startup."""
+    if container_queue:
+        container_queue.start()
+        logger.info("Container queue started")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up container queue on app shutdown."""
+    if container_queue:
+        container_queue.cleanup_all()
+        logger.info("Container queue stopped")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -128,7 +164,18 @@ def login(payload: LoginPayload):
 @app.get("/health")
 def health_check():
     """Simple liveness probe."""
-    return {"status": "ok"}
+    health_info = {"status": "ok"}
+    if container_queue:
+        health_info["queue_status"] = container_queue.queue_status()
+    return health_info
+
+
+@app.get("/queue-status")
+def get_queue_status(claims: dict = Depends(verify_token)):
+    """Get current container queue statistics (requires authentication)."""
+    if not container_queue:
+        raise HTTPException(status_code=503, detail="Container queue not enabled")
+    return container_queue.queue_status()
 
 
 @app.post("/api-keys", response_model=ApiKeyResponse, status_code=201)
@@ -189,6 +236,8 @@ def register_node(
     return NodeInfo(
         id=entry.id,
         status=entry.status,
+        container_backed=entry.container_backed,
+        container_name=entry.container_name,
     )
 
 
@@ -197,7 +246,12 @@ def list_nodes(available_only: bool = False):
     """List registered nodes, optionally filtered to available ones."""
     entries = registry.list_available() if available_only else registry.list_all()
     return [
-        NodeInfo(id=e.id, status=e.status)
+        NodeInfo(
+            id=e.id,
+            status=e.status,
+            container_backed=e.container_backed,
+            container_name=e.container_name,
+        )
         for e in entries
     ]
 
@@ -212,6 +266,9 @@ def request_node(
 
     The server automatically picks the first available node – the user does
     not choose.  The ``user_id`` is taken from the JWT claims.
+    
+    If the container queue is enabled, pre-provisioned containers are assigned
+    first for lower latency. Falls back to traditional nodes if queue is empty.
     """
     user_id = claims["sub"]
     try:
@@ -232,7 +289,11 @@ def request_node(
 
 @app.post("/sessions/release_node/{node_id}", response_model=NodeInfo)
 def release_node(node_id: str, claims: dict = Depends(verify_token)):
-    """Release a node so it becomes available again."""
+    """Release a node so it becomes available again.
+    
+    If the node is container-backed, it's returned to the queue for recycling.
+    Health checks are performed before re-adding to the queue.
+    """
     try:
         entry = registry.release(node_id)
     except KeyError:
@@ -241,6 +302,8 @@ def release_node(node_id: str, claims: dict = Depends(verify_token)):
     return NodeInfo(
         id=entry.id,
         status=entry.status,
+        container_backed=entry.container_backed,
+        container_name=entry.container_name,
     )
 
 
