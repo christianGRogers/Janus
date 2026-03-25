@@ -26,6 +26,19 @@ echo "▸ Installing dependencies..."
 # ── Prepare LXD image (one-time setup) ──────────────────────────────────────
 # Check if LXD is available and image doesn't exist
 if command -v lxc &>/dev/null; then
+    echo "▸ Checking LXD configuration..."
+    
+    # Check if LXD has been initialized
+    if ! lxc network list &>/dev/null 2>&1; then
+        echo "⚠️  LXD is installed but not initialized"
+        echo "   Initializing LXD with default configuration..."
+        echo "" | sudo lxd init --auto 2>/dev/null || {
+            echo "   LXD auto-init failed. Manual init may be needed:"
+            echo "   sudo lxd init --auto"
+        }
+        sleep 2
+    fi
+    
     if ! lxc image info janus-compute-node &>/dev/null 2>&1; then
         echo "▸ Creating LXD container image (this will take 10-15 minutes)..."
         if [ -f "deploy/setup-lxd-queue.sh" ]; then
@@ -35,6 +48,11 @@ if command -v lxc &>/dev/null; then
             else
                 echo "⚠️  LXD image creation failed (see details above), but continuing..."
                 echo "   To retry image creation manually, run: bash deploy/setup-lxd-queue.sh"
+                echo ""
+                echo "   If containers cannot reach network, you may need to:"
+                echo "   1. Check LXD bridge: lxc network list"
+                echo "   2. Reset LXD: sudo lxd init --auto"
+                echo "   3. Retry: bash deploy/setup-lxd-queue.sh"
             fi
         else
             echo "⚠️  setup-lxd-queue.sh not found in deploy/ directory"
@@ -46,7 +64,8 @@ if command -v lxc &>/dev/null; then
     fi
 else
     echo "⚠️  LXD CLI not available, skipping container queue setup"
-    echo "   Install LXD with: snap install lxd"
+    echo "   Install LXD with: sudo snap install lxd"
+    echo "   Then initialize: lxd init --auto"
 fi
 
 # ── Install / reload systemd service ─────────────────────────────────────────

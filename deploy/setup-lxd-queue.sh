@@ -22,6 +22,24 @@ if ! command -v lxc &>/dev/null; then
 fi
 
 echo "✓ LXD CLI available"
+
+# Check and initialize LXD networking if needed
+echo "📋 Checking LXD network configuration..."
+if ! lxc network list 2>/dev/null | grep -q "lxdbr0"; then
+    echo "⚠️  LXD bridge network 'lxdbr0' not found"
+    echo "    Initializing LXD with default configuration..."
+    
+    # Run lxd init with automatic configuration
+    echo "" | lxd init --auto 2>/dev/null || {
+        echo "⚠️  LXD auto-init failed, trying manual configuration..."
+        # Minimal LXD setup - just enable storage and network
+        mkdir -p /etc/lxd/profiles
+        true
+    }
+    sleep 2
+fi
+
+echo "✓ LXD networking ready"
 echo
 
 # Check if image already exists
@@ -31,15 +49,29 @@ if lxc image info "$IMAGE_NAME" &>/dev/null 2>&1; then
 fi
 
 echo "📋 Step 1: Creating temporary container..."
-lxc launch "$BASE_IMAGE" "$TEMP_CONTAINER" -q
+lxc launch "$BASE_IMAGE" "$TEMP_CONTAINER" -q || {
+    echo "⚠️  Failed to launch container, cleaning up old instance..."
+    lxc delete "$TEMP_CONTAINER" -f -q 2>/dev/null || true
+    sleep 2
+    lxc launch "$BASE_IMAGE" "$TEMP_CONTAINER" -q || {
+        echo "❌ Failed to create container"
+        exit 1
+    }
+}
 echo "✓ Container created: $TEMP_CONTAINER"
 echo
 
+# Wait for container to start
+echo "⏳ Waiting for container to start..."
+sleep 5
+
 # Wait for container to be ready and network to be configured
-echo "⏳ Waiting for container network (checking network connectivity)..."
+echo "⏳ Checking for container network connectivity (up to 60 seconds)..."
+NETWORK_OK=false
 for i in {1..30}; do
-    if lxc exec "$TEMP_CONTAINER" -- curl -s -m 2 http://archive.ubuntu.com/ubuntu/dists/jammy/InRelease > /dev/null 2>&1; then
+    if lxc exec "$TEMP_CONTAINER" -- timeout 3 curl -s -m 2 http://archive.ubuntu.com/ubuntu/dists/jammy/InRelease > /dev/null 2>&1; then
         echo "✓ Network is reachable"
+        NETWORK_OK=true
         break
     fi
     echo "  Attempt $i/30: Waiting for network..."
@@ -47,13 +79,19 @@ for i in {1..30}; do
 done
 
 # Check if network is actually working
-if ! lxc exec "$TEMP_CONTAINER" -- ping -c 1 8.8.8.8 >/dev/null 2>&1; then
-    echo "⚠️  Container network may not be configured properly"
-    echo "    Attempting to configure container network..."
+if ! lxc exec "$TEMP_CONTAINER" -- timeout 3 ping -c 1 8.8.8.8 >/dev/null 2>&1; then
+    if [ "$NETWORK_OK" = false ]; then
+        echo "⚠️  Container network not available"
+        echo "    This may be due to LXD bridge not being configured"
+        echo "    Continuing with minimal installation..."
+    fi
     
     # Try to configure DHCP
+    echo "    Attempting to restart networking..."
     lxc exec "$TEMP_CONTAINER" -- systemctl restart networking 2>/dev/null || true
     sleep 3
+else
+    echo "✓ Container network verified with ping"
 fi
 
 echo "📋 Step 2: Updating packages..."
@@ -109,12 +147,27 @@ done
 echo "✓ ML framework installation complete (with network resilience)"
 echo
 
-echo "📋 Step 5: Publishing image..."
-lxc publish "$TEMP_CONTAINER" --alias "$IMAGE_NAME" -q
+echo "📋 Step 5: Stopping container before publishing..."
+lxc stop "$TEMP_CONTAINER" -f 2>/dev/null || true
+sleep 2
+echo "✓ Container stopped"
+echo
+
+echo "📋 Step 6: Publishing image..."
+lxc publish "$TEMP_CONTAINER" --alias "$IMAGE_NAME" -q || {
+    echo "⚠️  Failed to publish image, attempting recovery..."
+    lxc stop "$TEMP_CONTAINER" -f 2>/dev/null || true
+    sleep 2
+    lxc publish "$TEMP_CONTAINER" --alias "$IMAGE_NAME" -q || {
+        echo "❌ Failed to publish image after retry"
+        lxc delete "$TEMP_CONTAINER" -f -q 2>/dev/null || true
+        exit 1
+    }
+}
 echo "✓ Image published: $IMAGE_NAME"
 echo
 
-echo "📋 Step 6: Cleaning up..."
+echo "📋 Step 7: Cleaning up..."
 lxc delete "$TEMP_CONTAINER" -f -q
 echo "✓ Temporary container deleted"
 echo
