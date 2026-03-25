@@ -28,12 +28,25 @@ echo "▸ Installing dependencies..."
 if command -v lxc &>/dev/null; then
     if ! lxc image info janus-compute-node &>/dev/null 2>&1; then
         echo "▸ Creating LXD container image (this will take 10-15 minutes)..."
-        bash deploy/setup-lxd-queue.sh || echo "⚠️  LXD image creation failed, continuing..."
+        if [ -f "deploy/setup-lxd-queue.sh" ]; then
+            bash deploy/setup-lxd-queue.sh
+            if [ $? -eq 0 ]; then
+                echo "✓ LXD image created successfully"
+            else
+                echo "⚠️  LXD image creation failed (see details above), but continuing..."
+                echo "   To retry image creation manually, run: bash deploy/setup-lxd-queue.sh"
+            fi
+        else
+            echo "⚠️  setup-lxd-queue.sh not found in deploy/ directory"
+            echo "   Container queue will not be provisioned automatically"
+            echo "   To create image manually: bash deploy/setup-lxd-queue.sh"
+        fi
     else
         echo "▸ LXD image 'janus-compute-node' already exists"
     fi
 else
     echo "⚠️  LXD CLI not available, skipping container queue setup"
+    echo "   Install LXD with: snap install lxd"
 fi
 
 # ── Install / reload systemd service ─────────────────────────────────────────
@@ -50,19 +63,38 @@ fi
 
 sudo systemctl daemon-reload
 sudo systemctl enable "$SERVICE_NAME"
-sudo systemctl restart "$SERVICE_NAME"
 
+# Restart service, but continue if it fails (might need reboot or manual fix)
+if sudo systemctl restart "$SERVICE_NAME" 2>&1; then
+    echo "  ✓ Service restarted successfully"
+else
+    # Service might have failed to start due to LXD not being available
+    echo "  ⚠️  Service restart had issues, but this may be expected if LXD is not available"
+    echo "     The service is still enabled and will start on next boot"
+fi
+
+echo ""
 echo "▸ Deployment complete — service status:"
-sudo systemctl status "$SERVICE_NAME" --no-pager || true
+sudo systemctl status "$SERVICE_NAME" --no-pager || echo "  ⚠️  Service status check failed"
 
 # ── Verify LXD queue is initializing ─────────────────────────────────────────
 echo ""
 echo "▸ Checking LXD container queue status..."
 sleep 2
-if sudo journalctl -u janus.service -n 10 2>/dev/null | grep -q "Container queue"; then
-    echo "  ✓ LXD container queue initialized successfully"
+
+# Check if service is running
+if sudo systemctl is-active --quiet "$SERVICE_NAME"; then
+    echo "  ✓ Service is running"
+    
+    if sudo journalctl -u janus.service -n 10 2>/dev/null | grep -q "Container queue"; then
+        echo "  ✓ LXD container queue initialized successfully"
+    else
+        echo "  ℹ️  Container queue may be initializing or disabled"
+    fi
 else
-    echo "  ℹ️  Container queue may be initializing or disabled"
+    echo "  ⚠️  Service is not running. Check with:"
+    echo "     sudo systemctl status janus.service"
+    echo "     sudo journalctl -u janus.service -n 50"
 fi
 
 echo ""
@@ -71,3 +103,8 @@ echo "  watch lxc list"
 echo ""
 echo "▸ To follow logs:"
 echo "  sudo journalctl -u janus.service --follow"
+echo ""
+echo "▸ If service failed to start, you may need to:"
+echo "  1. Ensure LXD is installed: snap install lxd"
+echo "  2. Create the image: bash deploy/setup-lxd-queue.sh"
+echo "  3. Restart service: sudo systemctl restart janus.service"
