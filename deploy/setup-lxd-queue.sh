@@ -65,33 +65,25 @@ echo
 echo "⏳ Waiting for container to start..."
 sleep 5
 
-# Wait for container to be ready and network to be configured
-echo "⏳ Checking for container network connectivity (up to 60 seconds)..."
-NETWORK_OK=false
-for i in {1..30}; do
-    if lxc exec "$TEMP_CONTAINER" -- timeout 3 curl -s -m 2 http://archive.ubuntu.com/ubuntu/dists/jammy/InRelease > /dev/null 2>&1; then
-        echo "✓ Network is reachable"
-        NETWORK_OK=true
-        break
-    fi
-    echo "  Attempt $i/30: Waiting for network..."
-    sleep 2
-done
+# As per configuration, prefer host-assisted installs rather than trying
+# to reach the WAN from inside the container. The host will act as
+# package proxy and pip cache. This avoids long container-side network waits.
+HOST_ONLY_INSTALL="${HOST_ONLY_INSTALL:-1}"
+HOST_IP="${HOST_IP:-$(hostname -I | awk '{print $1}') }"
 
-# Check if network is actually working
-if ! lxc exec "$TEMP_CONTAINER" -- timeout 3 ping -c 1 8.8.8.8 >/dev/null 2>&1; then
-    if [ "$NETWORK_OK" = false ]; then
-        echo "⚠️  Container network not available"
-        echo "    This may be due to LXD bridge not being configured"
-        echo "    Continuing with minimal installation..."
-    fi
-    
-    # Try to configure DHCP
-    echo "    Attempting to restart networking..."
-    lxc exec "$TEMP_CONTAINER" -- systemctl restart networking 2>/dev/null || true
-    sleep 3
+echo "⏳ Verifying host reachability from container..."
+if lxc exec "$TEMP_CONTAINER" -- timeout 2 ping -c 1 "$HOST_IP" >/dev/null 2>&1; then
+    echo "✓ Container can reach host $HOST_IP"
+    CONTAINER_CAN_REACH_HOST=true
 else
-    echo "✓ Container network verified with ping"
+    echo "⚠️  Container cannot reach host $HOST_IP"
+    CONTAINER_CAN_REACH_HOST=false
+fi
+
+if [ "$HOST_ONLY_INSTALL" = "1" ]; then
+    echo "ℹ️  HOST_ONLY_INSTALL=1: will attempt host-assisted installation only"
+else
+    echo "ℹ️  HOST_ONLY_INSTALL=0: will attempt container network install if host-assisted fails"
 fi
 
 echo "📋 Step 2: Updating packages..."
@@ -116,14 +108,26 @@ if [ "$NETWORK_OK" = false ] && lxc exec "$TEMP_CONTAINER" -- timeout 2 ping -c 
     sudo mkdir -p "$PIP_CACHE_DIR"
     sudo chown "$(whoami)":"$(whoami)" "$PIP_CACHE_DIR" || true
 
-    # Packages to download for pip cache (keep list small; skip if download fails)
-    PIP_PACKAGES=(tensorflow torch torchvision torchaudio numpy pandas scikit-learn jupyter matplotlib requests)
-    echo "    Downloading pip wheels to $PIP_CACHE_DIR (host) — may take a while..."
-    for pkg in "${PIP_PACKAGES[@]}"; do
+    # Split packages into small (download by default) and heavy (optional)
+    PIP_PACKAGES_SMALL=(numpy pandas scikit-learn jupyter matplotlib requests)
+    PIP_PACKAGES_HEAVY=(tensorflow torch torchvision torchaudio)
+
+    echo "    Downloading small pip wheels to $PIP_CACHE_DIR (host) — may take a while..."
+    for pkg in "${PIP_PACKAGES_SMALL[@]}"; do
         echo "      - Attempting to download: $pkg"
         python3 -m pip download -q -d "$PIP_CACHE_DIR" "$pkg" || echo "      ⚠️  Download failed for $pkg (continuing)"
     done
 
+    # Heavy wheels are optional. Set DOWNLOAD_HEAVY_WHEELS=1 to enable
+    if [ "${DOWNLOAD_HEAVY_WHEELS:-0}" = "1" ]; then
+        echo "    DOWNLOAD_HEAVY_WHEELS=1: attempting to download heavy packages (may be very large)"
+        for pkg in "${PIP_PACKAGES_HEAVY[@]}"; do
+            echo "      - Attempting to download (heavy): $pkg"
+            python3 -m pip download -q -d "$PIP_CACHE_DIR" "$pkg" || echo "      ⚠️  Download failed for $pkg (continuing)"
+        done
+    else
+        echo "    Skipping heavy packages (tensorflow/pytorch). Set DOWNLOAD_HEAVY_WHEELS=1 to enable."
+    fi
     # --- Start a simple HTTP server to serve pip cache (if not already running)
     PIP_SERVER_PORT=8002
     if ! ss -ltn "sport = :$PIP_SERVER_PORT" 2>/dev/null | grep -q LISTEN; then
