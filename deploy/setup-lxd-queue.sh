@@ -95,11 +95,91 @@ else
 fi
 
 echo "📋 Step 2: Updating packages..."
-if lxc exec "$TEMP_CONTAINER" -- apt-get update -qq 2>/dev/null; then
-    lxc exec "$TEMP_CONTAINER" -- apt-get upgrade -y -qq 2>/dev/null || true
-    echo "✓ Packages updated"
+# If the container cannot reach external networks but can reach the host,
+# use the host as a package/cache proxy to install dependencies.
+HOST_IP="${HOST_IP:-$(hostname -I | awk '{print $1}')}"
+
+if [ "$NETWORK_OK" = false ] && lxc exec "$TEMP_CONTAINER" -- timeout 2 ping -c 1 "$HOST_IP" >/dev/null 2>&1; then
+    echo "⚠️  Container cannot reach the internet but can reach host: $HOST_IP"
+    echo "    Preparing host-side package proxy and pip cache..."
+
+    # --- Ensure apt-cacher-ng is available on the host (provides apt proxy at :3142)
+    if ! command -v apt-cacher-ng &>/dev/null; then
+        echo "    Installing apt-cacher-ng on host... (requires sudo)"
+        sudo apt-get update -qq || true
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq apt-cacher-ng || true
+    fi
+    sudo systemctl restart apt-cacher-ng 2>/dev/null || true
+
+    # --- Prepare pip wheel cache on host
+    PIP_CACHE_DIR="/var/janus/pip_cache"
+    sudo mkdir -p "$PIP_CACHE_DIR"
+    sudo chown "$(whoami)":"$(whoami)" "$PIP_CACHE_DIR" || true
+
+    # Packages to download for pip cache (keep list small; skip if download fails)
+    PIP_PACKAGES=(tensorflow torch torchvision torchaudio numpy pandas scikit-learn jupyter matplotlib requests)
+    echo "    Downloading pip wheels to $PIP_CACHE_DIR (host) — may take a while..."
+    for pkg in "${PIP_PACKAGES[@]}"; do
+        echo "      - Attempting to download: $pkg"
+        python3 -m pip download -q -d "$PIP_CACHE_DIR" "$pkg" || echo "      ⚠️  Download failed for $pkg (continuing)"
+    done
+
+    # --- Start a simple HTTP server to serve pip cache (if not already running)
+    PIP_SERVER_PORT=8002
+    if ! ss -ltn "sport = :$PIP_SERVER_PORT" 2>/dev/null | grep -q LISTEN; then
+        echo "    Starting pip cache HTTP server on port $PIP_SERVER_PORT"
+        nohup python3 -m http.server "$PIP_SERVER_PORT" --directory "$PIP_CACHE_DIR" >/var/log/janus-pip-cache.log 2>&1 &
+        sleep 1
+    else
+        echo "    Pip cache server already running on port $PIP_SERVER_PORT"
+    fi
+
+    # --- Configure container to use apt-cacher-ng on host
+    echo "    Configuring container to use host apt proxy at $HOST_IP:3142"
+    lxc exec "$TEMP_CONTAINER" -- bash -lc "printf 'Acquire::http::Proxy \"http://$HOST_IP:3142\";\n' | sudo tee /etc/apt/apt.conf.d/01proxy >/dev/null"
+
+    # Now attempt apt update via host proxy
+    if lxc exec "$TEMP_CONTAINER" -- apt-get update -qq 2>/dev/null; then
+        lxc exec "$TEMP_CONTAINER" -- apt-get upgrade -y -qq 2>/dev/null || true
+        echo "✓ Packages updated via host apt proxy"
+    else
+        echo "⚠️  Package update failed even via host proxy, continuing..."
+    fi
+
+    echo
+    echo "📋 Step 3: Installing Python and dependencies (using host pip cache where possible)..."
+    # Use pip --no-index --find-links to point to host-served cache
+    PIP_INDEX_URL="http://$HOST_IP:$PIP_SERVER_PORT"
+
+    # Try to install Python and base packages via apt (best-effort)
+    if lxc exec "$TEMP_CONTAINER" -- apt-get install -y -qq python3 python3-dev build-essential git curl wget 2>/dev/null; then
+        echo "✓ Python and build tools installed via apt"
+    else
+        echo "⚠️  Base apt packages failed to install; attempting minimal python only"
+        lxc exec "$TEMP_CONTAINER" -- apt-get install -y -qq python3 2>/dev/null || true
+    fi
+
+    # Install python packages via pip from host cache
+    echo "📋 Step 4: Installing ML frameworks (from host pip cache if available)"
+    for pkg in "${PIP_PACKAGES[@]}"; do
+        echo "  Installing $pkg from host cache..."
+        if lxc exec "$TEMP_CONTAINER" -- bash -lc "python3 -m pip install --no-index --find-links $PIP_INDEX_URL $pkg" 2>/dev/null; then
+            echo "    ✓ $pkg installed from host cache"
+        else
+            echo "    ⚠️  $pkg installation failed from host cache (skipping)"
+        fi
+    done
+    echo "✓ ML framework installation complete (host-assisted)"
+    echo
 else
-    echo "⚠️  Package update failed (network issue), trying to continue..."
+    # Default path: container has network access or host not reachable; do normal updates
+    if lxc exec "$TEMP_CONTAINER" -- apt-get update -qq 2>/dev/null; then
+        lxc exec "$TEMP_CONTAINER" -- apt-get upgrade -y -qq 2>/dev/null || true
+        echo "✓ Packages updated"
+    else
+        echo "⚠️  Package update failed (network issue), trying to continue..."
+    fi
+    echo
 fi
 echo
 
