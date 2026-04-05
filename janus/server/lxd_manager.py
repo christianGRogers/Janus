@@ -192,6 +192,9 @@ class LXDManager:
         """Provision and start a new container for a node.
 
         Returns the container name on success.
+        
+        Note: lxc launch automatically starts the container, so we don't need
+        to call start_container() separately.
         """
         container_name = f"{self.container_prefix}-{node_id}"
         config = ContainerConfig(
@@ -204,13 +207,9 @@ class LXDManager:
         )
 
         try:
-            # Create container
+            # Create and start container (lxc launch does both automatically)
             self.client.create_container(config)
-            logger.info(f"Container created: {container_name}")
-
-            # Start container
-            self.client.start_container(container_name)
-            logger.info(f"Container started: {container_name}")
+            logger.info(f"Container created and started: {container_name}")
 
             # Store mapping
             self._container_map[node_id] = container_name
