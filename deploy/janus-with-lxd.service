@@ -12,7 +12,7 @@ WorkingDirectory=/opt/janus
 
 # Environment variables for LXD container queue
 Environment="LXD_SOCKET=/var/snap/lxd/common/lxd/unix.socket"
-Environment="LXD_IMAGE_NAME=janus-compute-node"
+Environment="LXD_IMAGE_FINGERPRINT=b03058e361bf"
 Environment="CONTAINER_QUEUE_SIZE=5"
 Environment="CONTAINER_PROVISION_DELAY=2"
 Environment="CONTAINER_READY_TIMEOUT=60"

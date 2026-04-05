@@ -28,7 +28,7 @@ echo "✓ LXD socket ready"
 # Step 1: Create base image
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
-echo "Step 1: Creating base image 'janus-compute-node'..."
+echo "Step 1: Creating base image 'from-instance-flying-oarfish'..."
 echo "═══════════════════════════════════════════════════════════════"
 
 TEMP_CONTAINER="janus-setup-temp"
@@ -57,29 +57,33 @@ lxc exec "$TEMP_CONTAINER" -- apt-get install -y \
     git \
     > /dev/null 2>&1
 
-echo "Installing Python dependencies..."
-lxc exec "$TEMP_CONTAINER" -- pip3 install --upgrade pip setuptools wheel > /dev/null 2>&1
-lxc exec "$TEMP_CONTAINER" -- pip3 install \
+echo "Creating Python venv at /opt/janus-env..."
+lxc exec "$TEMP_CONTAINER" -- python3 -m venv /opt/janus-env > /dev/null 2>&1
+
+echo "Installing Python dependencies in venv..."
+lxc exec "$TEMP_CONTAINER" -- /opt/janus-env/bin/pip install --upgrade pip setuptools wheel > /dev/null 2>&1
+lxc exec "$TEMP_CONTAINER" -- /opt/janus-env/bin/pip install \
     tensorflow \
     numpy \
     scikit-learn \
     pandas \
     requests \
+    h5py \
     > /dev/null 2>&1
 
-# Optional: Install PyTorch if needed
-echo "Installing PyTorch (CPU)..."
-lxc exec "$TEMP_CONTAINER" -- pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu > /dev/null 2>&1
+# Optional: Install PyTorch if needed (uncomment to enable)
+# echo "Installing PyTorch (CPU)..."
+# lxc exec "$TEMP_CONTAINER" -- /opt/janus-env/bin/pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu > /dev/null 2>&1
 
 # Publish image
 echo "Publishing image..."
 lxc stop "$TEMP_CONTAINER" --quiet
-lxc publish "$TEMP_CONTAINER" --alias janus-compute-node --quiet
+lxc publish "$TEMP_CONTAINER" --alias from-instance-flying-oarfish --quiet
 lxc delete "$TEMP_CONTAINER" --quiet
 
-echo "✓ Image 'janus-compute-node' created successfully"
+echo "✓ Image 'from-instance-flying-oarfish' created successfully"
 echo ""
-lxc image info janus-compute-node | grep -E "Aliases|Size|Created"
+lxc image info from-instance-flying-oarfish | grep -E "Aliases|Size|Created"
 
 # Step 2: Test container provisioning
 echo ""
@@ -91,16 +95,16 @@ TEST_CONTAINER="janus-test-node"
 lxc delete "$TEST_CONTAINER" --force 2>/dev/null || true
 
 echo "Launching test container..."
-lxc launch janus-compute-node "$TEST_CONTAINER" --quiet
+lxc launch from-instance-flying-oarfish "$TEST_CONTAINER" --quiet
 
 echo "Waiting for boot..."
 sleep 5
 
-echo "Testing Python..."
-if lxc exec "$TEST_CONTAINER" -- python3 -c "import tensorflow; print(f'TensorFlow {tensorflow.__version__}')" 2>/dev/null; then
-    echo "✓ TensorFlow working in container"
+echo "Testing Python from venv..."
+if lxc exec "$TEST_CONTAINER" -- /opt/janus-env/bin/python3 -c "import tensorflow; print(f'TensorFlow {tensorflow.__version__}')" 2>/dev/null; then
+    echo "✓ TensorFlow working in venv"
 else
-    echo "⚠ Warning: TensorFlow not working"
+    echo "⚠ Warning: TensorFlow not working in venv"
 fi
 
 echo "Cleaning up test container..."
@@ -118,7 +122,7 @@ echo ""
 cat << 'EOF'
 # LXD Container Queue Configuration
 export LXD_SOCKET="/var/snap/lxd/common/lxd/unix.socket"
-export LXD_IMAGE_NAME="janus-compute-node"
+export LXD_IMAGE_FINGERPRINT="b03058e361bf"
 export LXD_PROFILE="default"
 export LXD_CONTAINER_PREFIX="janus-node"
 
@@ -142,7 +146,7 @@ echo ""
 echo "From your Janus repository directory, run:"
 echo ""
 echo "  export LXD_SOCKET=\"/var/snap/lxd/common/lxd/unix.socket\""
-echo "  export LXD_IMAGE_NAME=\"janus-compute-node\""
+echo "  export LXD_IMAGE_FINGERPRINT=\"b03058e361bf\""
 echo "  export CONTAINER_QUEUE_SIZE=\"5\""
 echo "  uvicorn janus.server.app:app --reload"
 echo ""
@@ -169,16 +173,14 @@ echo "════════════════════════�
 echo "Setup Complete! ✓"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
-echo "Your Janus server is now ready to use LXD container queue."
-echo "Containers will be pre-provisioned for instant node assignment."
-echo ""
-echo "For more information, see:"
-echo "  - janus/server/LXD_CONTAINER_QUEUE.md"
-echo "  - CONTAINER_QUEUE_IMPLEMENTATION.md"
-echo ""
-
-# Optional: Show LXD resources
-echo "Current LXD resources:"
+#!/bin/bash
+# Deprecated: detailed setup moved to deploy/ and then removed.
+echo "Notice: setup-lxd-queue.sh is deprecated. Create the 'from-instance-flying-oarfish' LXD image manually if needed."
+echo "Manual example:
+  lxc launch ubuntu:22.04 janus-setup-temp
+  lxc exec janus-setup-temp -- apt-get update && apt-get install -y python3 python3-pip
+  lxc stop janus-setup-temp
+  lxc publish janus-setup-temp --alias from-instance-flying-oarfish
+  lxc delete janus-setup-temp -f"
+exit 0
 echo "  Containers: $(lxc list -c n --format csv | wc -l)"
-echo "  Images:     $(lxc image list -c a --format csv | wc -l)"
-echo "  Storage:    $(df -h | grep lxd)"

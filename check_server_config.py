@@ -18,7 +18,7 @@ print("─" * 60)
 env_vars = [
     "LXD_SOCKET",
     "LXD_CLUSTER_ENDPOINT",
-    "LXD_IMAGE_NAME",
+    "LXD_IMAGE_FINGERPRINT",
     "CONTAINER_QUEUE_SIZE",
     "CONTAINER_PROVISION_DELAY",
     "CONTAINER_READY_TIMEOUT",
@@ -63,20 +63,20 @@ print("─" * 60)
 try:
     result = subprocess.run(["lxc", "image", "list"], capture_output=True, text=True, timeout=10)
     if result.returncode == 0:
-        image_name = os.environ.get("LXD_IMAGE_NAME", "janus-compute-node")
+        image_fingerprint = os.environ.get("LXD_IMAGE_FINGERPRINT", "b03058e361bf")
         lines = result.stdout.strip().split('\n')
         
         # Find image in output
         found = False
         for line in lines:
-            if image_name in line:
-                print(f"✓ Image '{image_name}' found:")
+            if image_fingerprint in line:
+                print(f"✓ Image with fingerprint '{image_fingerprint}' found:")
                 print(f"  {line}")
                 found = True
                 break
         
         if not found:
-            print(f"✗ Image '{image_name}' not found")
+            print(f"✗ Image with fingerprint '{image_fingerprint}' not found")
             print("  Available images:")
             for line in lines[3:]:  # Skip header lines
                 if line.strip() and '|' in line:
@@ -122,7 +122,7 @@ missing = []
 if not os.environ.get("LXD_SOCKET") and not os.environ.get("LXD_CLUSTER_ENDPOINT"):
     missing.append("LXD_SOCKET or LXD_CLUSTER_ENDPOINT")
 if not os.environ.get("LXD_IMAGE_NAME"):
-    missing.append("LXD_IMAGE_NAME")
+    missing.append("LXD_IMAGE_FINGERPRINT")
 
 if missing:
     print("⚠️  Missing environment variables:")
@@ -131,7 +131,7 @@ if missing:
     print()
     print("Set these variables before starting the server:")
     print("   export LXD_SOCKET=/var/snap/lxd/common/lxd/unix.socket")
-    print("   export LXD_IMAGE_NAME=janus-compute-node")
+    print("   export LXD_IMAGE_FINGERPRINT=b03058e361bf")
     print("   export CONTAINER_QUEUE_SIZE=5")
     print()
 else:

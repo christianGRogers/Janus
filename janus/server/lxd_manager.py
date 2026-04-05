@@ -7,7 +7,7 @@ in a queue to reduce user wait time.
 Configuration via environment variables:
     LXD_SOCKET           – Unix socket path (default: /var/snap/lxd/common/lxd/unix.socket)
     LXD_CLUSTER_ENDPOINT – HTTP(S) endpoint if not using socket
-    LXD_IMAGE_NAME       – LXD image alias to use (default: janus-compute-node)
+    LXD_IMAGE_FINGERPRINT – LXD image fingerprint (default: b03058e361bf, see janus.const)
     LXD_PROFILE          – LXD profile for containers (default: default)
     LXD_CONTAINER_PREFIX – Prefix for container names (default: janus-node)
     LXD_CPU_LIMIT        – CPU cores per container (default: 2)
@@ -26,6 +26,8 @@ import socket
 from typing import Optional, Dict, List
 from dataclasses import dataclass
 from datetime import datetime, timezone
+
+from janus.const import LXD_COMPUTE_NODE_FINGERPRINT
 
 logger = logging.getLogger(__name__)
 
@@ -154,13 +156,25 @@ class LXDContainerClient:
         return [path.split("/")[-1] for path in metadata]
 
     def execute_command(self, name: str, command: List[str]) -> dict:
-        """Execute a command inside a container."""
+        """Execute a command inside a container.
+        
+        Automatically activates the Python venv at /opt/janus-env before
+        executing the command. This ensures all Python packages are available
+        for inference workloads.
+        """
+        # Wrap command with venv activation
+        # Convert ["python3", "script.py"] → ["bash", "-c", "source /opt/janus-env/bin/activate && python3 script.py"]
+        wrapped_command = [
+            "bash",
+            "-c",
+            f"source /opt/janus-env/bin/activate && {' '.join(command)}"
+        ]
         payload = {
-            "command": command,
+            "command": wrapped_command,
             "wait-for-websocket": False,
             "interactive": False,
         }
-        logger.info(f"Executing in {name}: {' '.join(command)}")
+        logger.info(f"Executing in {name}: {' '.join(command)} (with venv activation)")
         return self._make_request("POST", f"/1.0/containers/{name}/exec", payload)
 
 
@@ -169,7 +183,8 @@ class LXDManager:
 
     def __init__(self):
         self.client = LXDContainerClient()
-        self.image_name = os.environ.get("LXD_IMAGE_NAME", "janus-compute-node")
+        # Use fingerprint if set in environment, otherwise fall back to alias
+        self.image_name = os.environ.get("LXD_IMAGE_FINGERPRINT", LXD_COMPUTE_NODE_FINGERPRINT)
         self.profile = os.environ.get("LXD_PROFILE", "default")
         self.container_prefix = os.environ.get("LXD_CONTAINER_PREFIX", "janus-node")
         self.cpu_limit = int(os.environ.get("LXD_CPU_LIMIT", "2"))

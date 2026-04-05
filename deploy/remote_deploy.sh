@@ -39,28 +39,17 @@ if command -v lxc &>/dev/null; then
         sleep 2
     fi
     
-    if ! lxc image info janus-compute-node &>/dev/null 2>&1; then
-        echo "▸ Creating LXD container image (this will take 10-15 minutes)..."
-        if [ -f "deploy/setup-lxd-queue.sh" ]; then
-            bash deploy/setup-lxd-queue.sh
-            if [ $? -eq 0 ]; then
-                echo "✓ LXD image created successfully"
-            else
-                echo "⚠️  LXD image creation failed (see details above), but continuing..."
-                echo "   To retry image creation manually, run: bash deploy/setup-lxd-queue.sh"
-                echo ""
-                echo "   If containers cannot reach network, you may need to:"
-                echo "   1. Check LXD bridge: lxc network list"
-                echo "   2. Reset LXD: sudo lxd init --auto"
-                echo "   3. Retry: bash deploy/setup-lxd-queue.sh"
-            fi
-        else
-            echo "⚠️  setup-lxd-queue.sh not found in deploy/ directory"
-            echo "   Container queue will not be provisioned automatically"
-            echo "   To create image manually: bash deploy/setup-lxd-queue.sh"
-        fi
+    if ! lxc image info from-instance-flying-oarfish &>/dev/null 2>&1; then
+        echo "⚠️  LXD image 'from-instance-flying-oarfish' not found. This deployment assumes the image already exists."
+        echo "    Manual image creation steps (run on host):"
+        echo "      lxc launch ubuntu:22.04 janus-setup-temp"
+        echo "      lxc exec janus-setup-temp -- apt-get update && apt-get install -y python3 python3-pip"
+        echo "      lxc stop janus-setup-temp"
+        echo "      lxc publish janus-setup-temp --alias from-instance-flying-oarfish"
+        echo "      lxc delete janus-setup-temp -f"
+        echo "    Continuing deployment without automatic image creation."
     else
-        echo "▸ LXD image 'janus-compute-node' already exists"
+        echo "▸ LXD image 'from-instance-flying-oarfish' already exists"
     fi
 else
     echo "⚠️  LXD CLI not available, skipping container queue setup"
@@ -125,5 +114,11 @@ echo "  sudo journalctl -u janus.service --follow"
 echo ""
 echo "▸ If service failed to start, you may need to:"
 echo "  1. Ensure LXD is installed: snap install lxd"
-echo "  2. Create the image: bash deploy/setup-lxd-queue.sh"
+echo "  2. Create the LXD image manually (see deploy/test-lxd-setup.sh for guidance)"
+echo "     Example manual steps:"
+echo "       lxc launch ubuntu:22.04 janus-setup-temp"
+echo "       lxc exec janus-setup-temp -- apt-get update && apt-get install -y python3 python3-pip"
+echo "       lxc stop janus-setup-temp"
+echo "       lxc publish janus-setup-temp --alias from-instance-flying-oarfish"
+echo "       lxc delete janus-setup-temp -f"
 echo "  3. Restart service: sudo systemctl restart janus.service"
