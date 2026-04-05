@@ -39,8 +39,8 @@ if command -v lxc &>/dev/null; then
         sleep 2
     fi
     
-    if ! lxc image info from-instance-flying-oarfish &>/dev/null 2>&1; then
-        echo "⚠️  LXD image 'from-instance-flying-oarfish' not found. This deployment assumes the image already exists."
+    if ! lxc image info b03058e361bf &>/dev/null 2>&1; then
+        echo "⚠️  LXD image with fingerprint 'b03058e361bf' not found. This deployment assumes the image already exists."
         echo "    Manual image creation steps (run on host):"
         echo "      lxc launch ubuntu:22.04 janus-setup-temp"
         echo "      lxc exec janus-setup-temp -- apt-get update && apt-get install -y python3 python3-pip"
@@ -49,7 +49,7 @@ if command -v lxc &>/dev/null; then
         echo "      lxc delete janus-setup-temp -f"
         echo "    Continuing deployment without automatic image creation."
     else
-        echo "▸ LXD image 'from-instance-flying-oarfish' already exists"
+        echo "▸ LXD image with fingerprint 'b03058e361bf' already exists"
     fi
 else
     echo "⚠️  LXD CLI not available, skipping container queue setup"
