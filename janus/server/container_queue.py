@@ -65,6 +65,10 @@ class ContainerQueue:
 
         # Provisioning lock to avoid race conditions
         self._lock = threading.Lock()
+        
+        # Track consecutive provisioning failures to prevent runaway loop
+        self._consecutive_failures = 0
+        self._max_consecutive_failures = 5
 
     def start(self) -> None:
         """Start the background provisioning thread."""
@@ -92,6 +96,13 @@ class ContainerQueue:
                 needed = self.target_size - current_size
 
                 if needed > 0:
+                    # If too many consecutive failures, back off instead of spinning
+                    if self._consecutive_failures >= self._max_consecutive_failures:
+                        logger.warning(f"Too many provisioning failures ({self._consecutive_failures}), backing off for 30s")
+                        time.sleep(30)
+                        self._consecutive_failures = 0
+                        continue
+                    
                     logger.info(f"Queue size: {current_size}/{self.target_size} – provisioning {needed} containers")
                     for _ in range(needed):
                         if not self._running:
@@ -124,12 +135,15 @@ class ContainerQueue:
                 self._all_containers[node_id] = pc
                 self._ready_queue.put(pc)
                 logger.info(f"Container ready: {container_name} ({node_id})")
+                self._consecutive_failures = 0  # Reset failure count on success
             else:
                 logger.warning(f"Container failed to become ready: {node_id}")
+                self._consecutive_failures += 1
                 self.lxd_manager.teardown_container(node_id)
 
         except Exception as exc:
             logger.error(f"Failed to provision container: {exc}")
+            self._consecutive_failures += 1
 
     def consume_container(self, timeout: float = 10.0) -> Optional[ProvisionedContainer]:
         """

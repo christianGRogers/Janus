@@ -135,11 +135,16 @@ class LXDContainerClient:
             raise
 
     def get_container_status(self, name: str) -> Optional[dict]:
-        """Get container status via lxc info."""
+        """Get container status via lxc info (returns state string, not dict)."""
         try:
+            # lxc info --format=json returns: {"type": "container", "state": {"status": "Running", ...}, ...}
             output = self._run_lxc("info", name, "--format=json")
-            return json.loads(output)
-        except Exception:
+            data = json.loads(output)
+            # Extract the state status
+            state = data.get("state", {}).get("status", "Unknown")
+            return {"state": state, "metadata": data}
+        except Exception as exc:
+            logger.debug(f"Failed to get container status for {name}: {exc}")
             return None
 
     def list_containers(self) -> List[str]:
