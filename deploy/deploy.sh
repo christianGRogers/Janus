@@ -60,8 +60,13 @@ else
 fi
 
 # Create app directory structure
-mkdir -p "$APP_DIR" "$APP_DIR/models" "$APP_DIR/logs"
-chown -R janus:janus "$APP_DIR"
+if [ -d "$APP_DIR" ]; then
+    echo "  Cleaning up existing directory..."
+    rm -rf "$APP_DIR"
+fi
+
+mkdir -p "$APP_DIR"
+chown janus:janus "$APP_DIR"
 chmod 755 "$APP_DIR"
 echo "✓ Created directories: $APP_DIR"
 
@@ -71,23 +76,17 @@ echo "✓ Created directories: $APP_DIR"
 
 step "Setting up repository"
 
-if [ -d "$APP_DIR/.git" ]; then
-    echo "✓ Repository already exists, updating..."
-    cd "$APP_DIR"
-    sudo -u janus git fetch origin
-    sudo -u janus git reset --hard origin/main
-else
-    echo "✓ Cloning repository..."
-    # If directory exists but isn't a repo, remove it first
-    if [ -d "$APP_DIR" ]; then
-        rm -rf "$APP_DIR"
-    fi
-    sudo -u janus git clone "$GITHUB_REPO" "$APP_DIR"
-fi
+echo "✓ Cloning repository..."
+sudo -u janus git clone "$GITHUB_REPO" "$APP_DIR"
 
 cd "$APP_DIR"
 echo "✓ Repository ready at: $APP_DIR"
 git log -1 --oneline | sed 's/^/  /'
+
+# Create working directories
+mkdir -p models logs
+chown -R janus:janus models logs
+chmod 755 models logs
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 4. CREATE AND CONFIGURE VIRTUAL ENVIRONMENT
