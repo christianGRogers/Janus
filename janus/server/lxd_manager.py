@@ -135,14 +135,23 @@ class LXDContainerClient:
             raise
 
     def get_container_status(self, name: str) -> Optional[dict]:
-        """Get container status via lxc info (returns state string, not dict)."""
+        """Get container status via lxc list (more compatible than lxc info)."""
         try:
-            # lxc info --format=json returns: {"type": "container", "state": {"status": "Running", ...}, ...}
-            output = self._run_lxc("info", name, "--format=json")
-            data = json.loads(output)
-            # Extract the state status
-            state = data.get("state", {}).get("status", "Unknown")
-            return {"state": state, "metadata": data}
+            # Use lxc list with CSV format to check if container is running
+            # Format: NAME,STATE,IPV4,IPV6,TYPE,SNAPSHOTS
+            output = self._run_lxc("list", name, "--format=csv", "-c", "n,s")
+            lines = output.strip().split("\n")
+            if not lines:
+                return None
+            
+            # Parse CSV: "container-name,RUNNING" or "container-name,STOPPED"
+            parts = lines[0].split(",")
+            if len(parts) >= 2:
+                container_name = parts[0].strip()
+                state = parts[1].strip()
+                # Normalize state to match what is_container_ready expects
+                return {"state": state, "metadata": {"name": container_name}}
+            return None
         except Exception as exc:
             logger.debug(f"Failed to get container status for {name}: {exc}")
             return None
@@ -259,8 +268,8 @@ class LXDManager:
                 time.sleep(1)
                 continue
 
-            state = status.get("metadata", {}).get("state", "").lower()
-            if state == "running":
+            state = status.get("state", "").upper()  # lxc list returns uppercase state
+            if state == "RUNNING":
                 logger.info(f"Container ready for {node_id} after {attempt + 1} attempts")
                 return True
 
