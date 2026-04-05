@@ -44,138 +44,110 @@ class ContainerConfig:
 
 
 class LXDContainerClient:
-    """Low-level client for LXD REST API (socket or HTTP)."""
+    """Low-level client for LXD using CLI subprocess (lxc command)."""
 
     def __init__(self):
-        self.socket_path = os.environ.get(
-            "LXD_SOCKET",
-            "/var/snap/lxd/common/lxd/unix.socket"
-        )
-        self.http_endpoint = os.environ.get("LXD_CLUSTER_ENDPOINT")
-        self.use_socket = not self.http_endpoint
         self.timeout = 30
 
-    def _make_request(self, method: str, path: str, data: Optional[dict] = None) -> dict:
-        """Make a request to LXD API via socket or HTTP."""
-        if self.use_socket:
-            return self._socket_request(method, path, data)
-        else:
-            return self._http_request(method, path, data)
-
-    def _socket_request(self, method: str, path: str, data: Optional[dict] = None) -> dict:
-        """Send request via Unix socket."""
+    def _run_lxc(self, *args) -> str:
+        """Run an lxc CLI command and return stdout."""
         try:
-            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            sock.connect(self.socket_path)
-            sock.settimeout(self.timeout)
-
-            # Build HTTP-style request
-            body = json.dumps(data) if data else ""
-            headers = f"Host: localhost\r\nContent-Type: application/json\r\n"
-            if body:
-                headers += f"Content-Length: {len(body)}\r\n"
-            request = f"{method} {path} HTTP/1.1\r\n{headers}\r\n{body}"
-
-            sock.sendall(request.encode())
-            response = sock.recv(65536).decode()
-            sock.close()
-
-            # Parse HTTP response
-            parts = response.split("\r\n\r\n", 1)
-            body_text = parts[1] if len(parts) > 1 else ""
-            return json.loads(body_text) if body_text else {}
-
+            result = subprocess.run(
+                ["lxc"] + list(args),
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(f"lxc {' '.join(args)} failed: {result.stderr}")
+            return result.stdout.strip()
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"lxc command timed out: {' '.join(args)}")
         except Exception as exc:
-            logger.error(f"LXD socket request failed: {exc}")
-            raise
-
-    def _http_request(self, method: str, path: str, data: Optional[dict] = None) -> dict:
-        """Send request via HTTP(S) endpoint."""
-        try:
-            import requests
-            url = f"{self.http_endpoint}{path}"
-            headers = {"Content-Type": "application/json"}
-            
-            if method == "GET":
-                resp = requests.get(url, headers=headers, timeout=self.timeout)
-            elif method == "POST":
-                resp = requests.post(url, json=data, headers=headers, timeout=self.timeout)
-            elif method == "DELETE":
-                resp = requests.delete(url, headers=headers, timeout=self.timeout)
-            else:
-                raise ValueError(f"Unsupported method: {method}")
-
-            resp.raise_for_status()
-            return resp.json()
-
-        except Exception as exc:
-            logger.error(f"LXD HTTP request failed: {exc}")
+            logger.error(f"lxc command failed: {exc}")
             raise
 
     def create_container(self, config: ContainerConfig) -> dict:
-        """Create a new LXD container."""
-        payload = {
-            "name": config.name,
-            "source": {"type": "image", "alias": config.image},
-            "profiles": [config.profile],
-            "config": {
-                "limits.cpu": str(config.cpu_limit),
-                "limits.memory": f"{config.memory_limit}MB",
-                "root.size": f"{config.disk_limit}GB",
-            },
-        }
-        logger.info(f"Creating container: {config.name}")
-        return self._make_request("POST", "/1.0/containers", payload)
+        """Create a new LXD container using lxc CLI."""
+        try:
+            logger.info(f"Creating container: {config.name}")
+            self._run_lxc(
+                "launch",
+                config.image,  # Can be fingerprint or alias
+                config.name,
+                "-c", f"limits.cpu={config.cpu_limit}",
+                "-c", f"limits.memory={config.memory_limit}MB",
+                "-d", config.profile,
+            )
+            return {"metadata": {}, "status": "created"}
+        except Exception as exc:
+            logger.error(f"Failed to create container: {exc}")
+            raise
 
     def start_container(self, name: str) -> dict:
         """Start a stopped container."""
-        payload = {"action": "start", "timeout": 30}
-        logger.info(f"Starting container: {name}")
-        return self._make_request("POST", f"/1.0/containers/{name}/state", payload)
+        try:
+            logger.info(f"Starting container: {name}")
+            self._run_lxc("start", name)
+            return {"metadata": {}, "status": "started"}
+        except Exception as exc:
+            logger.error(f"Failed to start container: {exc}")
+            raise
 
     def stop_container(self, name: str, force: bool = False) -> dict:
         """Stop a running container."""
-        payload = {"action": "stop", "timeout": 30, "force": force}
-        logger.info(f"Stopping container: {name}")
-        return self._make_request("POST", f"/1.0/containers/{name}/state", payload)
+        try:
+            logger.info(f"Stopping container: {name}")
+            args = ["stop", name]
+            if force:
+                args.append("--force")
+            self._run_lxc(*args)
+            return {"metadata": {}, "status": "stopped"}
+        except Exception as exc:
+            logger.error(f"Failed to stop container: {exc}")
+            raise
 
     def delete_container(self, name: str) -> dict:
         """Delete a container."""
-        logger.info(f"Deleting container: {name}")
-        return self._make_request("DELETE", f"/1.0/containers/{name}")
+        try:
+            logger.info(f"Deleting container: {name}")
+            self._run_lxc("delete", name, "--force")
+            return {"metadata": {}, "status": "deleted"}
+        except Exception as exc:
+            logger.error(f"Failed to delete container: {exc}")
+            raise
 
-    def get_container_status(self, name: str) -> dict:
-        """Get container status and metadata."""
-        return self._make_request("GET", f"/1.0/containers/{name}")
+    def get_container_status(self, name: str) -> Optional[dict]:
+        """Get container status via lxc info."""
+        try:
+            output = self._run_lxc("info", name, "--format=json")
+            return json.loads(output)
+        except Exception:
+            return None
 
     def list_containers(self) -> List[str]:
-        """List all container names."""
-        result = self._make_request("GET", "/1.0/containers")
-        # Result typically: {"metadata": ["/1.0/containers/name1", "/1.0/containers/name2"]}
-        metadata = result.get("metadata", [])
-        return [path.split("/")[-1] for path in metadata]
+        """List all container names matching prefix."""
+        try:
+            output = self._run_lxc("list", "--format=csv", "-c", "n")
+            return [line.strip() for line in output.split("\n") if line.strip()]
+        except Exception:
+            return []
 
     def execute_command(self, name: str, command: List[str]) -> dict:
-        """Execute a command inside a container.
-        
-        Automatically activates the Python venv at /opt/janus-env before
-        executing the command. This ensures all Python packages are available
-        for inference workloads.
-        """
-        # Wrap command with venv activation
-        # Convert ["python3", "script.py"] → ["bash", "-c", "source /opt/janus-env/bin/activate && python3 script.py"]
-        wrapped_command = [
-            "bash",
-            "-c",
-            f"source /opt/janus-env/bin/activate && {' '.join(command)}"
-        ]
-        payload = {
-            "command": wrapped_command,
-            "wait-for-websocket": False,
-            "interactive": False,
-        }
-        logger.info(f"Executing in {name}: {' '.join(command)} (with venv activation)")
-        return self._make_request("POST", f"/1.0/containers/{name}/exec", payload)
+        """Execute a command inside a container."""
+        try:
+            # Wrap command with venv activation
+            wrapped = [
+                "bash",
+                "-c",
+                f"source /opt/janus-env/bin/activate && {' '.join(command)}"
+            ]
+            logger.info(f"Executing in {name}: {' '.join(command)}")
+            output = self._run_lxc("exec", name, "--", *wrapped)
+            return {"metadata": {}, "output": output}
+        except Exception as exc:
+            logger.error(f"Failed to execute command: {exc}")
+            raise
 
 
 class LXDManager:
