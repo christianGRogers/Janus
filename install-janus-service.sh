@@ -47,12 +47,15 @@ echo "────────────────────────�
 
 if ! id "janus" &>/dev/null 2>&1; then
     useradd -m -s /bin/bash -G lxd janus
-    echo "✓ User 'janus' created"
+    echo "✓ User 'janus' created with home directory"
 else
     echo "✓ User 'janus' already exists"
     # Ensure janus is in lxd group
     usermod -a -G lxd janus
-    echo "✓ User added to lxd group"
+    # Ensure home directory exists
+    mkdir -p /home/janus
+    chown -R janus:janus /home/janus
+    echo "✓ User configured with lxd group and home directory"
 fi
 
 echo
@@ -120,8 +123,37 @@ fi
 
 echo
 
-# Step 7: Install systemd service
-echo "📋 Step 7: Installing systemd service..."
+# Step 7: Verify janus user and directories before service install
+echo "📋 Step 7: Verifying user and directory setup..."
+echo "─────────────────────────────────────────────────────────────"
+
+# Verify user exists
+if ! id "janus" &>/dev/null 2>&1; then
+    echo "❌ User 'janus' does not exist!"
+    exit 1
+fi
+echo "✓ User 'janus' exists"
+
+# Verify home directory
+if [ ! -d /home/janus ]; then
+    mkdir -p /home/janus
+    chown janus:janus /home/janus
+    echo "✓ Home directory created"
+else
+    echo "✓ Home directory exists"
+fi
+
+# Verify app directory
+if [ ! -d /opt/janus/app ]; then
+    echo "❌ /opt/janus/app does not exist!"
+    exit 1
+fi
+echo "✓ App directory exists"
+
+echo
+
+# Step 8: Install systemd service
+echo "📋 Step 8: Installing systemd service..."
 echo "─────────────────────────────────────────────────────────────"
 
 cp /opt/janus/app/deploy/janus-with-lxd.service /etc/systemd/system/janus.service
@@ -147,8 +179,8 @@ echo "✓ Service installed and enabled"
 
 echo
 
-# Step 8: Start service
-echo "📋 Step 8: Starting Janus service..."
+# Step 9: Start service
+echo "📋 Step 9: Starting Janus service..."
 echo "─────────────────────────────────────────────────────────────"
 
 systemctl start janus.service
@@ -165,7 +197,7 @@ fi
 
 echo
 
-# Step 9: Summary
+# Step 10: Summary
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║  Installation Complete! ✓                                  ║"
 echo "╚════════════════════════════════════════════════════════════╝"
