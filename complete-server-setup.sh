@@ -14,19 +14,26 @@ id janus &>/dev/null || useradd -m -s /bin/bash janus
 usermod -a -G lxd janus 2>/dev/null || true
 
 # 2. Directories
-mkdir -p /opt/janus/{app,models,logs,venv}
+mkdir -p /opt/janus/{app,models,logs}
 chown -R janus:janus /opt/janus
+chmod 755 /opt/janus
 
 # 3. Repository
 if [ ! -d "/opt/janus/app/.git" ]; then
     sudo -u janus git clone https://github.com/christianGRogers/Janus.git /opt/janus/app
 fi
 
-# 4. Python venv and dependencies
-if [ ! -f /opt/janus/venv/bin/python3 ]; then
-    sudo -u janus python3 -m venv /opt/janus/venv
-    sudo -u janus /opt/janus/venv/bin/pip install -q --upgrade pip setuptools wheel
-    sudo -u janus /opt/janus/venv/bin/pip install -q -e /opt/janus/app uvicorn[standard]
+# 4. Python venv and dependencies in app directory
+if [ ! -f /opt/janus/app/venv/bin/python3 ]; then
+    sudo -u janus python3 -m venv /opt/janus/app/venv
+    sudo -u janus /opt/janus/app/venv/bin/pip install -q --upgrade pip setuptools wheel
+    sudo -u janus /opt/janus/app/venv/bin/pip install -q -e /opt/janus/app 'uvicorn[standard]'
+fi
+
+# Verify venv exists
+if [ ! -f /opt/janus/app/venv/bin/python3 ]; then
+    echo "❌ Venv creation failed"
+    exit 1
 fi
 
 # 5. Systemd service
