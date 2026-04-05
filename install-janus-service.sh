@@ -133,6 +133,12 @@ sed -i 's|/opt/janus|/opt/janus|g' /etc/systemd/system/janus.service
 if getent group lxd > /dev/null; then
     usermod -a -G lxd janus
     echo "✓ Added janus user to lxd group"
+    
+    # Set proper permissions on LXD socket
+    if [ -S /var/snap/lxd/common/lxd/unix.socket ]; then
+        chmod 660 /var/snap/lxd/common/lxd/unix.socket
+        echo "✓ LXD socket permissions updated"
+    fi
 fi
 
 systemctl daemon-reload
