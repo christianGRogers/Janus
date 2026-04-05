@@ -78,6 +78,10 @@ if [ -d "$APP_DIR/.git" ]; then
     sudo -u janus git reset --hard origin/main
 else
     echo "✓ Cloning repository..."
+    # If directory exists but isn't a repo, remove it first
+    if [ -d "$APP_DIR" ]; then
+        rm -rf "$APP_DIR"
+    fi
     sudo -u janus git clone "$GITHUB_REPO" "$APP_DIR"
 fi
 
