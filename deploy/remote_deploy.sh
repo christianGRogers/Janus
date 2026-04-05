@@ -1,27 +1,13 @@
-#!/usr/bin/env bash
-# deploy/remote_deploy.sh — Runs on the remote server during CI/CD.
-# Called by the GitHub Actions workflow after the repo is rsync'd.
+#!/bin/bash
+# deploy/remote_deploy.sh — Entry point for CI/CD deployments
+# This script is called by GitHub Actions. It delegates to the unified deploy script.
 set -euo pipefail
 
-APP_DIR="/home/christian/janus"
-VENV_DIR="$APP_DIR/venv"
-SERVICE_NAME="janus"
+# Change to the deploy directory
+cd "$(dirname "$0")" || exit 1
 
-cd "$APP_DIR"
-
-# ── Create / update virtualenv ────────────────────────────────────────────────
-if [ ! -x "$VENV_DIR/bin/python" ] || ! "$VENV_DIR/bin/python" -m pip --version &>/dev/null; then
-    echo "▸ Creating virtual environment..."
-    rm -rf "$VENV_DIR"
-    python3 -m venv "$VENV_DIR"
-    "$VENV_DIR/bin/python" -m ensurepip --upgrade
-fi
-
-echo "▸ Upgrading pip..."
-"$VENV_DIR/bin/python" -m pip install --upgrade pip
-
-echo "▸ Installing dependencies..."
-"$VENV_DIR/bin/pip" install .
+# Run the unified deployment script with sudo
+sudo bash ./deploy.sh
 
 # ── Prepare LXD image (one-time setup) ──────────────────────────────────────
 # Check if LXD is available and image doesn't exist
