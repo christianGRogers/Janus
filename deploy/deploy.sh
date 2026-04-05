@@ -79,9 +79,12 @@ step "Setting up repository"
 echo "✓ Cloning repository..."
 sudo -u janus git clone "$GITHUB_REPO" "$APP_DIR"
 
+# Configure git to trust this directory (owned by janus, accessed by root)
+git config --global --add safe.directory "$APP_DIR"
+
 cd "$APP_DIR"
 echo "✓ Repository ready at: $APP_DIR"
-git log -1 --oneline | sed 's/^/  /'
+sudo -u janus git log -1 --oneline | sed 's/^/  /'
 
 # Create working directories
 mkdir -p models logs
