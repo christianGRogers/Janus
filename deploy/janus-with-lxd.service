@@ -7,9 +7,11 @@ Wants=lxd.service
 [Service]
 Type=simple
 User=janus
-WorkingDirectory=/opt/janus
+WorkingDirectory=/opt/janus/app
 
 # Environment variables for LXD container queue
+Environment="PATH=/opt/janus/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="VIRTUAL_ENV=/opt/janus/venv"
 Environment="LXD_SOCKET=/var/snap/lxd/common/lxd/unix.socket"
 Environment="LXD_IMAGE_FINGERPRINT=b03058e361bf"
 Environment="CONTAINER_QUEUE_SIZE=5"
@@ -18,8 +20,8 @@ Environment="CONTAINER_READY_TIMEOUT=60"
 Environment="JANUS_MODEL_DIR=/opt/janus/models"
 Environment="PYTHONUNBUFFERED=1"
 
-# Start command
-ExecStart=/opt/janus/venv/bin/uvicorn \
+# Start command - use absolute path to python
+ExecStart=/opt/janus/venv/bin/python -m uvicorn \
   janus.server.app:app \
   --host 0.0.0.0 \
   --port 8000 \
