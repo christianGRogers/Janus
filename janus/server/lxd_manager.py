@@ -48,12 +48,29 @@ class LXDContainerClient:
 
     def __init__(self):
         self.timeout = 30
+        # Find lxc command - usually at /snap/bin/lxc
+        self.lxc_cmd = self._find_lxc_command()
+
+    def _find_lxc_command(self) -> str:
+        """Find the lxc command in common locations."""
+        common_paths = [
+            "/snap/bin/lxc",
+            "/usr/bin/lxc",
+            "/usr/local/bin/lxc",
+        ]
+        for path in common_paths:
+            if os.path.exists(path):
+                logger.info(f"Found lxc at: {path}")
+                return path
+        # Fallback to just "lxc" and hope it's in PATH
+        logger.warning("Could not find lxc in common locations, using 'lxc' from PATH")
+        return "lxc"
 
     def _run_lxc(self, *args) -> str:
         """Run an lxc CLI command and return stdout."""
         try:
             result = subprocess.run(
-                ["lxc"] + list(args),
+                [self.lxc_cmd] + list(args),
                 capture_output=True,
                 text=True,
                 timeout=self.timeout,
