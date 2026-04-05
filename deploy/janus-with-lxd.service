@@ -5,7 +5,7 @@ After=network.target lxd.service
 Wants=lxd.service
 
 [Service]
-Type=notify
+Type=simple
 User=janus
 Group=janus
 SupplementaryGroups=lxd
@@ -37,12 +37,6 @@ StartLimitBurst=3
 # Resource limits
 MemoryLimit=4G
 CPUQuota=200%
-
-# Security
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=/opt/janus/models /opt/janus/logs /var/snap/lxd/common/lxd/unix.socket
 
 # Logging
 StandardOutput=journal
