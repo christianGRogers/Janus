@@ -7,8 +7,6 @@ Wants=lxd.service
 [Service]
 Type=simple
 User=janus
-Group=janus
-SupplementaryGroups=lxd
 WorkingDirectory=/opt/janus
 
 # Environment variables for LXD container queue
@@ -33,10 +31,6 @@ Restart=on-failure
 RestartSec=10
 StartLimitInterval=60
 StartLimitBurst=3
-
-# Resource limits
-MemoryLimit=4G
-CPUQuota=200%
 
 # Logging
 StandardOutput=journal
