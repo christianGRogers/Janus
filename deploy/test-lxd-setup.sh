@@ -97,7 +97,12 @@ echo
 if [ -z "$TEST_CONTAINER" ] || lxc delete "$TEST_CONTAINER" -f -q &>/dev/null; then
     echo "✅ LXD networking appears to be working correctly!"
     echo ""
-    echo "You can now run: bash deploy/setup-lxd-queue.sh"
+    echo "To create the compute image manually (example):"
+    echo "  lxc launch ubuntu:22.04 janus-setup-temp"
+    echo "  lxc exec janus-setup-temp -- apt-get update && apt-get install -y python3 python3-pip"
+    echo "  lxc stop janus-setup-temp"
+    echo "  lxc publish janus-setup-temp --alias from-instance-flying-oarfish"
+    echo "  lxc delete janus-setup-temp -f"
     exit 0
 else
     echo "⚠️  LXD networking has issues"

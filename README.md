@@ -4,6 +4,8 @@ Janus is a financial inference platform that connects TensorFlow models to live 
 
 ## Installation
 
+### Server (local development)
+
 ```bash
 pip install -e .
 ```
@@ -14,13 +16,35 @@ For development (includes pytest and httpx):
 pip install -e ".[dev]"
 ```
 
+### Production with LXD Container Queue
+
+Janus can provision compute nodes on-demand using LXD containers. Each container runs a pre-built image with all dependencies and a Python venv at `/opt/janus-env`.
+
+**Setup the image once:**
+
+```bash
+bash setup-lxd-queue.sh
+```
+
+This creates the `from-instance-flying-oarfish` LXD image with TensorFlow, NumPy, and other ML libraries pre-installed.
+
+See [`deploy/SETUP_COMPUTE_NODE_IMAGE.md`](deploy/SETUP_COMPUTE_NODE_IMAGE.md) for detailed instructions.
+
 ## Quick Start
 
-### 1. Start the server
+### 1. Start the server (local development)
 
 ```bash
 uvicorn janus.server.app:app --reload
 ```
+
+### 1. Start the server with LXD container queue (production)
+
+```bash
+bash start-server-with-lxd.sh
+```
+
+This starts the server and enables the container queue. Compute nodes are provisioned on-demand from the `from-instance-flying-oarfish` image.
 
 ### 2. Register, log in, deploy a financial model
 
@@ -70,7 +94,59 @@ result = session.run_model(model_id, input_data=[[1.23, 4.56, 7.89]])
 print(result["predictions"])
 ```
 
+## Deployment Architecture
+
+### Local Development
+
+Single-machine setup: Janus server runs locally, models run in-process.
+
+```
+┌─────────────────────────────────────┐
+│  Janus Server (local)               │
+│  ├─ TensorFlow (in-process)         │
+│  ├─ Model uploads & storage         │
+│  └─ User API                        │
+└─────────────────────────────────────┘
+```
+
+Start with: `uvicorn janus.server.app:app --reload`
+
+### Production with LXD
+
+Distributed setup: Janus server orchestrates containerized compute nodes.
+
+```
+┌─────────────────────────────────────┐
+│  Janus Server (on LXD host)         │
+│  ├─ Model registry                  │
+│  ├─ Container queue manager         │
+│  └─ User API                        │
+└─────────────────────────────────────┘
+          ↓
+┌─────────────────────────────────────┐
+│  LXD Container Pool                 │
+│  ├─ [Compute Node 1]                │
+│  │  └─ /opt/janus-env venv          │
+│  │  └─ TensorFlow + dependencies    │
+│  ├─ [Compute Node 2]                │
+│  │  └─ /opt/janus-env venv          │
+│  │  └─ TensorFlow + dependencies    │
+│  └─ [... pre-provisioned pool ...]  │
+└─────────────────────────────────────┘
+```
+
+**Key features:**
+
+- **Pre-provisioned queue:** Containers are always ready (no startup latency)
+- **Auto-scaling:** New containers spawn in background to maintain pool size
+- **Venv activation:** Python dependencies auto-activated per-container
+- **Efficient:** Shared image + copy-on-write storage = minimal overhead
+
+Start with: `bash start-server-with-lxd.sh`
+
 ## How It Works
+
+### Local (In-Process)
 
 ```
 ┌──────────────┐       ┌────────────────┐       ┌──────────────┐
@@ -79,9 +155,32 @@ print(result["predictions"])
 └──────────────┘       └────────────────┘       └──────────────┘
 ```
 
-1. **Data Stream** — Janus fetches live market data from your `datastream_url` (expects JSON with a `"data"` key or a bare 2-D array).
-2. **Inference** — The uploaded TensorFlow model runs on the data and produces trade signals.
-3. **Broker** — Signals are dispatched as `{"signals": [[...]]}` via POST to your `broker_url`.
+### Containerized (LXD)
+
+```
+┌──────────────┐       ┌────────────────┐  Container  ┌──────────────┐
+│  Data Stream  │──────▶│  Janus Server  │─Queue──────▶│  LXD Node    │
+│  (market data)│       │  (orchestrate) │             │ (TF model)   │
+└──────────────┘       └────────────────┘             └──────────────┘
+                                │                         │
+                                └─────────Activate venv──┘
+                                  /opt/janus-env/bin/activate
+                                     │
+                                     └─→ python3 (with all packages)
+                                          ├─ TensorFlow
+                                          ├─ NumPy
+                                          ├─ Pandas
+                                          └─ scikit-learn
+```
+
+**Flow:**
+
+1. **Data Stream** — Janus fetches live market data from your `datastream_url`.
+2. **Queue Assignment** — Janus picks a pre-provisioned container from the queue.
+3. **Venv Activation** — Container's Python venv (`/opt/janus-env`) is auto-activated.
+4. **Inference** — TensorFlow model runs in the container and produces trade signals.
+5. **Broker** — Signals are dispatched via POST to your `broker_url`.
+6. **Queue Refresh** — Container is returned to the pool; a new one is spawned in background.
 
 ## API Reference
 

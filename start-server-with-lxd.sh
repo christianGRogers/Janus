@@ -1,5 +1,11 @@
 #!/bin/bash
 # Start Janus server with LXD container queue enabled
+# 
+# ASSUMES: The LXD image with fingerprint b03058e361bf has a Python venv pre-installed
+# at /opt/janus-env with all dependencies (TensorFlow, NumPy, etc.).
+#
+# The venv is automatically activated by lxd_manager.py when executing
+# inference commands in containers.
 
 set -e
 
@@ -24,28 +30,28 @@ fi
 echo "✓ LXD is running"
 echo
 
-# Step 2: Verify image exists
+# Step 2: Verify image exists (by fingerprint)
 echo "📋 Step 2: Checking LXD image..."
-IMAGE_NAME="${LXD_IMAGE_NAME:-janus-compute-node}"
+IMAGE_FINGERPRINT="b03058e361bf"
 
-if ! lxc image info "$IMAGE_NAME" &>/dev/null; then
-    echo "❌ Image '$IMAGE_NAME' not found"
-    echo "   Create it with: bash setup-lxd-queue.sh"
+if ! lxc image info "$IMAGE_FINGERPRINT" &>/dev/null; then
+    echo "❌ Image with fingerprint '$IMAGE_FINGERPRINT' not found"
+    echo "   Create the LXD image manually (see deploy/test-lxd-setup.sh for guidance)."
     exit 1
 fi
-echo "✓ Image '$IMAGE_NAME' exists"
+echo "✓ Image with fingerprint '$IMAGE_FINGERPRINT' exists"
 echo
 
 # Step 3: Set environment variables
 echo "📋 Step 3: Setting environment variables..."
 export LXD_SOCKET="${SOCKET}"
-export LXD_IMAGE_NAME="${LXD_IMAGE_NAME:-janus-compute-node}"
+export LXD_IMAGE_FINGERPRINT="${LXD_IMAGE_FINGERPRINT:-b03058e361bf}"
 export CONTAINER_QUEUE_SIZE="${CONTAINER_QUEUE_SIZE:-5}"
 export CONTAINER_PROVISION_DELAY="${CONTAINER_PROVISION_DELAY:-2}"
 export CONTAINER_READY_TIMEOUT="${CONTAINER_READY_TIMEOUT:-60}"
 
 echo "  LXD_SOCKET=$LXD_SOCKET"
-echo "  LXD_IMAGE_NAME=$LXD_IMAGE_NAME"
+echo "  LXD_IMAGE_FINGERPRINT=$LXD_IMAGE_FINGERPRINT"
 echo "  CONTAINER_QUEUE_SIZE=$CONTAINER_QUEUE_SIZE"
 echo "  CONTAINER_PROVISION_DELAY=$CONTAINER_PROVISION_DELAY"
 echo "  CONTAINER_READY_TIMEOUT=$CONTAINER_READY_TIMEOUT"

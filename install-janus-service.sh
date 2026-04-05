@@ -104,13 +104,13 @@ echo
 echo "📋 Step 6: Preparing LXD image..."
 echo "─────────────────────────────────────────────────────────────"
 
-if lxc image info janus-compute-node &>/dev/null 2>&1; then
-    echo "✓ Image 'janus-compute-node' already exists"
+if lxc image info from-instance-flying-oarfish &>/dev/null 2>&1; then
+    echo "✓ Image 'from-instance-flying-oarfish' already exists"
 else
     echo "  Creating image (this will take 5-10 minutes)..."
     sudo -u janus bash /opt/janus/app/deploy/setup-lxd-queue.sh
     
-    if lxc image info janus-compute-node &>/dev/null 2>&1; then
+    if lxc image info from-instance-flying-oarfish &>/dev/null 2>&1; then
         echo "✓ Image created successfully"
     else
         echo "⚠️  Image creation may have failed. Check manually:"
