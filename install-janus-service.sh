@@ -129,6 +129,12 @@ cp /opt/janus/app/deploy/janus-with-lxd.service /etc/systemd/system/janus.servic
 # Update paths in service file to match actual installation
 sed -i 's|/opt/janus|/opt/janus|g' /etc/systemd/system/janus.service
 
+# Add janus user to lxd group (required for LXD socket access)
+if getent group lxd > /dev/null; then
+    usermod -a -G lxd janus
+    echo "✓ Added janus user to lxd group"
+fi
+
 systemctl daemon-reload
 systemctl enable janus.service
 echo "✓ Service installed and enabled"
