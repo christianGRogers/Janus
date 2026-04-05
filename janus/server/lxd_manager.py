@@ -94,7 +94,7 @@ class LXDContainerClient:
                 config.name,
                 "-c", f"limits.cpu={config.cpu_limit}",
                 "-c", f"limits.memory={config.memory_limit}MB",
-                "-d", config.profile,
+                "-p", config.profile,  # Profile flag is -p, not -d
             )
             return {"metadata": {}, "status": "created"}
         except Exception as exc:
