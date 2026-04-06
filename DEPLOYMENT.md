@@ -93,7 +93,7 @@ sudo -u janus /opt/janus/venv/bin/python -m uvicorn janus.server.app:app --host 
 
 The container queue requires:
 1. LXD installed: `snap install lxd`
-2. LXD image with fingerprint `b03058e361bf`
+2. LXD image with fingerprint `52e2770759f6`
 
 To create the image manually:
 

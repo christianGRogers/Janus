@@ -7,7 +7,7 @@ in a queue to reduce user wait time.
 Configuration via environment variables:
     LXD_SOCKET           – Unix socket path (default: /var/snap/lxd/common/lxd/unix.socket)
     LXD_CLUSTER_ENDPOINT – HTTP(S) endpoint if not using socket
-    LXD_IMAGE_FINGERPRINT – LXD image fingerprint (default: b03058e361bf, see janus.const)
+    LXD_IMAGE_FINGERPRINT – LXD image fingerprint (default: 52e2770759f6, see janus.const)
     LXD_PROFILE          – LXD profile for containers (default: default)
     LXD_CONTAINER_PREFIX – Prefix for container names (default: janus-node)
     LXD_CPU_LIMIT        – CPU cores per container (default: 2)

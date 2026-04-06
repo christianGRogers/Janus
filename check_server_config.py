@@ -6,6 +6,7 @@ Check Janus server LXD configuration and diagnose container queue issues.
 import os
 import sys
 import subprocess
+from janus.const import LXD_COMPUTE_NODE_FINGERPRINT
 
 print("╔════════════════════════════════════════════════════════════╗")
 print("║  Janus Server LXD Configuration Check                     ║")
@@ -63,20 +64,19 @@ print("─" * 60)
 try:
     result = subprocess.run(["lxc", "image", "list"], capture_output=True, text=True, timeout=10)
     if result.returncode == 0:
-        image_fingerprint = os.environ.get("LXD_IMAGE_FINGERPRINT", "b03058e361bf")
         lines = result.stdout.strip().split('\n')
         
         # Find image in output
         found = False
         for line in lines:
-            if image_fingerprint in line:
-                print(f"✓ Image with fingerprint '{image_fingerprint}' found:")
+            if LXD_COMPUTE_NODE_FINGERPRINT in line:
+                print(f"✓ Image with fingerprint '{LXD_COMPUTE_NODE_FINGERPRINT}' found:")
                 print(f"  {line}")
                 found = True
                 break
         
         if not found:
-            print(f"✗ Image with fingerprint '{image_fingerprint}' not found")
+            print(f"✗ Image with fingerprint '{LXD_COMPUTE_NODE_FINGERPRINT}' not found")
             print("  Available images:")
             for line in lines[3:]:  # Skip header lines
                 if line.strip() and '|' in line:
@@ -131,7 +131,7 @@ if missing:
     print()
     print("Set these variables before starting the server:")
     print("   export LXD_SOCKET=/var/snap/lxd/common/lxd/unix.socket")
-    print("   export LXD_IMAGE_FINGERPRINT=b03058e361bf")
+    print(f"   export LXD_IMAGE_FINGERPRINT='{LXD_COMPUTE_NODE_FINGERPRINT}'")
     print("   export CONTAINER_QUEUE_SIZE=5")
     print()
 else:

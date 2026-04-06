@@ -13,7 +13,7 @@ APP_DIR="/opt/janus"
 VENV_DIR="$APP_DIR/venv"
 SERVICE_NAME="janus"
 GITHUB_REPO="https://github.com/christianGRogers/Janus.git"
-LXD_IMAGE_FINGERPRINT="b03058e361bf"
+LXD_IMAGE_FINGERPRINT="52e2770759f6"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # HELPER FUNCTIONS
