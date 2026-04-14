@@ -15,6 +15,8 @@ import uuid
 import shutil
 import sqlite3
 import logging
+import json
+import subprocess
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, Depends, Header, Query, UploadFile, File
 from typing import List, Optional
@@ -398,7 +400,9 @@ def run_model(model_id: str, payload: RunModelRequest, claims: dict = Depends(ve
     stream takes priority.  When ``broker_url`` is given the predictions
     are POSTed there as ``{"signals": [[...]]}``.
 
-    **Requires** ``tensorflow`` to be installed on the server.
+    If a ``node_id`` is associated with the model, the inference request
+    is forwarded to that compute node. Otherwise, requires ``tensorflow``
+    to be installed on the broker server.
     """
     import requests as _requests
 
@@ -431,7 +435,105 @@ def run_model(model_id: str, payload: RunModelRequest, claims: dict = Depends(ve
             detail="Provide either datastream_url or input_data",
         )
 
-    # ── load model ────────────────────────────────────────────────────────
+    # ── check if model is associated with a compute node ──────────────────
+    node_id = m.get("node_id")
+    if node_id:
+        node_entry = registry.get(node_id)
+        if node_entry and node_entry.container_backed:
+            # Forward inference to the compute node via container
+            container_name = node_entry.container_name
+            try:
+                # Copy model file to container
+                logger.info(f"Copying model {model_id} to container {container_name}")
+                subprocess.run(
+                    ["lxc", "file", "push", model_path, f"{container_name}/root/models/"],
+                    capture_output=True,
+                    timeout=30,
+                    check=True,
+                )
+                
+                # Create inference script that will run on the node
+                model_filename = os.path.basename(model_path)
+                remote_model_path = f"/root/models/{model_filename}"
+                inference_script = f"""
+import sys
+import json
+import numpy as np
+import tensorflow as tf
+
+try:
+    model_path = "{remote_model_path}"
+    if model_path.endswith(".h5") or model_path.endswith(".keras"):
+        tf_model = tf.keras.models.load_model(model_path)
+    elif model_path.endswith(".zip"):
+        import tempfile, zipfile
+        extract_dir = tempfile.mkdtemp()
+        with zipfile.ZipFile(model_path, "r") as zf:
+            zf.extractall(extract_dir)
+        tf_model = tf.keras.models.load_model(extract_dir)
+    else:
+        raise ValueError("Unsupported model format")
+    
+    # Run inference
+    input_data = {json.dumps(input_data)}
+    input_array = np.array(input_data, dtype=np.float32)
+    predictions = tf_model.predict(input_array).tolist()
+    print(json.dumps({{"predictions": predictions}}))
+except Exception as e:
+    print(json.dumps({{"error": str(e)}}), file=sys.stderr)
+    sys.exit(1)
+"""
+                
+                # Execute inference on the node
+                logger.info(f"Running inference on node container {container_name}")
+                result = subprocess.run(
+                    ["lxc", "exec", container_name, "--", "python3", "-c", inference_script],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                
+                if result.returncode == 0:
+                    try:
+                        output = json.loads(result.stdout.strip())
+                        if "error" in output:
+                            logger.warning(f"Node inference error: {output['error']}, falling back to local")
+                        else:
+                            predictions = output["predictions"]
+                            logger.info(f"Successfully ran inference on node {node_id}")
+                            
+                            # Dispatch to broker if needed
+                            broker_dispatched = False
+                            if payload.broker_url:
+                                try:
+                                    broker_resp = _requests.post(
+                                        payload.broker_url,
+                                        json={"signals": predictions},
+                                        timeout=30,
+                                    )
+                                    broker_resp.raise_for_status()
+                                    broker_dispatched = True
+                                except Exception as exc:
+                                    raise HTTPException(
+                                        status_code=502,
+                                        detail=f"Failed to dispatch signals to broker: {exc}",
+                                    )
+                            
+                            return RunModelResponse(
+                                model_id=model_id,
+                                predictions=predictions,
+                                broker_url=payload.broker_url,
+                                broker_dispatched=broker_dispatched,
+                            )
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Failed to parse node response: {e}, falling back to local")
+                else:
+                    logger.warning(f"Node inference failed: {result.stderr}, falling back to local")
+                    
+            except Exception as exc:
+                logger.warning(f"Failed to execute inference on node {node_id}: {exc}, falling back to local execution")
+
+    # ── fall back to local inference ──────────────────────────────────────
     try:
         import tensorflow as tf
     except ImportError:
