@@ -15,7 +15,7 @@ import requests
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 JANUS_URL = "https://janus.bradensbay.com"
-EMAIL = "christian.rogers@mail.utoronto.ca"
+EMAIL = "christiangrrogers@gmail.com"
 PASSWORD = "TestPassword123!"
 
 # ─── Step 1: Create a trivial TensorFlow model ───────────────────────────────

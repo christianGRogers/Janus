@@ -68,6 +68,9 @@ model_store: dict[str, dict] = {}
 # Directory where uploaded model files are saved.
 MODEL_UPLOAD_DIR = os.environ.get("JANUS_MODEL_DIR", os.path.join(os.path.dirname(__file__), "_models"))
 
+# LXD command location (usually at /snap/bin/lxc)
+LXC_CMD = "/snap/bin/lxc"
+
 
 # ── Lifecycle events ──────────────────────────────────────────────────────────
 
@@ -446,7 +449,7 @@ def run_model(model_id: str, payload: RunModelRequest, claims: dict = Depends(ve
                 # Copy model file to container
                 logger.info(f"Copying model {model_id} to container {container_name}")
                 subprocess.run(
-                    ["lxc", "file", "push", model_path, f"{container_name}/root/models/"],
+                    [LXC_CMD, "file", "push", model_path, f"{container_name}/root/models/"],
                     capture_output=True,
                     timeout=30,
                     check=True,
@@ -487,7 +490,7 @@ except Exception as e:
                 # Execute inference on the node
                 logger.info(f"Running inference on node container {container_name}")
                 result = subprocess.run(
-                    ["lxc", "exec", container_name, "--", "python3", "-c", inference_script],
+                    [LXC_CMD, "exec", container_name, "--", "python3", "-c", inference_script],
                     capture_output=True,
                     text=True,
                     timeout=120,
